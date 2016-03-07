@@ -1,9 +1,10 @@
-192.168.20.1 mtcfss.lan wpad.mtcfss.lan ap.lejenome.me myrouter lejenome.lan www.lan router.lan
+192.168.20.1 mtcfss.lan wpad.mtcfss.lan myrouter lejenome.lan pc.lejenome.lan
 
-192.168.20.2 hanen.lan wifi.hanen.lan
+192.168.20.2 hanen.lan pc.hanen.lan
 192.168.20.3 fatma.lan android.fatma.lan
 192.168.20.4 yassine.lan android.yassine.lan
 192.168.20.5 mourad.lan android.mourad.lan
-192.168.20.6 firas.lan wifi.firas.lan
-192.168.20.7 mobile.firas.lan
-192.168.20.8 mirghmi.lan
+192.168.20.6 firchatn.lan pc.firchatn.lan
+192.168.20.7 mobile.firchatn.lan
+192.168.20.8 android.firchatn.lan
+192.168.20.9 merghmi.lan pc.merghmi.lan

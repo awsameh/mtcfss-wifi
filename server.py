@@ -2,6 +2,9 @@
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import sys
 
+"""Basic HTTP server with wpad.dat metadata support
+"""
+
 port = 8080
 if len(sys.argv) == 2:
     try:

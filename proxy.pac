@@ -10,5 +10,5 @@ function FindProxyForURL(url, host) {
       dnsDomainIs(host, ".lan") || dnsDomainIs(host, "localhost"))
     return "DIRECT";
 
-  return "PROXY 192.168.20.1:3031; DIRECT";
+  return "PROXY mtcfss.lan:3031; DIRECT";
 }
