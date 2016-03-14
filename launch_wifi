@@ -5,20 +5,29 @@ set -x
 set -e
 
 AP_IN=ap0
-WIFI_IN=wlp8s0
+WIFI_IN=wlp8s0 # wifi interface where to add ap0 interface
+WAN_IN=enp9s0 # wan interface where lan network to be redirected
 AP_IP=192.168.20.1
-AP_NET=$AP_IP/255.255.255.0
+AP_NET=$AP_IP/24
 
 [ "$(id -u)" != "0" ] && echo "You are not Superman!!" && exit 1
 
 quit() {
 	# EXIT
-	set +e
-	systemctl stop smbd nmbd
-	iptables -t nat -D POSTROUTING -o $WIFI_IN -j MASQUERADE
+	iptables -F
+	iptables -t nat -F
+	iptables -t mangle -F
+	iptables -X
+	iptables -t nat -X
+
+	iptables -t nat -D POSTROUTING -o $WAN_IN -j MASQUERADE
 	iptables -D FORWARD -i $AP_IN   -s 192.168.20.0/24 -j ACCEPT
-	iptables -D FORWARD -i $WIFI_IN -d 192.168.20.0/24 -j ACCEPT
-	iptables -t nat -F # FIXME maybe other nat for other apps are running
+	iptables -D FORWARD -i $WAN_IN -d 192.168.20.0/24 -j ACCEPT
+
+	sudo iptables -A INPUT -i lo -j ACCEPT
+	sudo iptables -A OUTPUT -o lo -j ACCEPT
+
+	systemctl stop smbd nmbd
 	kill -9 $(cat /var/run/dnsmasq-${AP_IN}.pid)
 	kill $(cat /var/run/git-daemon-${AP_IN}.pid) || true
 	kill $(cat /var/run/squid-${AP_IN}.pid)
@@ -35,6 +44,7 @@ ip addr add $AP_IP/24 broadcast 192.168.20.255 dev $AP_IN
 sysctl -w net.ipv4.ip_forward=1
 # Controls source route verification
 sysctl -w net.ipv4.conf.default.rp_filter=0
+sysctl -w net.ipv4.conf.lo.rp_filter=0
 # Do not accept source routing
 sysctl -w net.ipv4.conf.default.accept_source_route=0
 
@@ -50,29 +60,46 @@ iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 139  -j 
 iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 445  -j ACCEPT # smbd
 iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 3030 -j ACCEPT # squid
 iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 3031 -j ACCEPT # squid
+iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 8080 -j ACCEPT # http-alt
 iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 9418 -j ACCEPT # git-daemon
 iptables -A INPUT -i $AP_IN -m state --state RELATED,ESTABLISHED -j ACCEPT
+### Forward without passing by squid
+iptables -t nat -I POSTROUTING -o $WAN_IN -j MASQUERADE
+#iptables -I FORWARD -i $AP_IN   -s 192.168.20.0/24 -j ACCEPT
+#iptables -I FORWARD -i $WAN_IN -d 192.168.20.0/24 -j ACCEPT
 
+cat <<EOF >/dev/null
+### Tproxy
+iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 80  -j ACCEPT
+iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 443 -j ACCEPT
+iptables -t tproxy -A PREROUTING -i $AP_IN -p tcp -m tcp --dport 80  -j TPROXY --on-port 3032
+iptables -t tproxy -A PREROUTING -i $AP_IN -p tcp -m tcp --dport 443 -j TPROXY --on-port 3032
+EOF
+
+#cat <<EOF >/dev/null
+#### intercept & REDIRECT
+iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 80   -j ACCEPT # http
 iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 80 -j ACCEPT
 iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 443 -j ACCEPT
-iptables -t nat -A PREROUTING -i $AP_IN ! -s $AP_IP -p tcp --dport 80  -j DNAT --to-destination $AP_IP:3030
-iptables -t nat -A PREROUTING -i $AP_IN ! -s $AP_IP -p tcp --dport 443 -j DNAT --to-destination $AP_IP:3030
-iptables -t nat -I POSTROUTING -o $AP_IN -s $AP_NET -d $AP_IP -p tcp -j SNAT --to $AP_IP
-# iptables -I FORWARD -i $AP_IN -o $AP_IN -s $AP_NET -d $AP_IP -p tcp --dport 3030 -j ACCEPT
+iptables -t nat -A PREROUTING -i $AP_IN -p tcp -m tcp --dport 80  -j REDIRECT --to-port 3030
 
-#iptables -t nat -A PREROUTING -i $AP_IN ! -s $AP_IP -p tcp --dport 80  -j REDIRECT --to-port 3030
-#iptables -t nat -A PREROUTING -i $AP_IN ! -s $AP_IP -p tcp --dport 443 -j REDIRECT --to-port 3030
-#iptables -t nat -A POSTROUTING -o $WIFI_IN -j MASQUERADE
-iptables -t nat -A POSTROUTING -j MASQUERADE
+iptables -A FORWARD -p tcp -m tcp --dport 443 -j REJECT --reject-with icmp-port-unreachable
+#iptables -t nat -A PREROUTING -i $AP_IN -p tcp -m tcp --dport 443 -j REDIRECT --to-port 3030
+
+#iptables -I FORWARD -i $AP_IN -o $AP_IN -s $AP_NET -d $AP_IP -p tcp --dport 3030 -j ACCEPT
+
+iptables -t nat -A POSTROUTING -o $WAN_IN -j MASQUERADE
 #iptables -t mangle -A PREROUTING -p tcp --dport 3030 -j DROP
 #iptables -P FORWARD DROP
 #iptables -P OUTPUT ACCEPT
+#EOF
 
 cat <<EOF >/dev/null
-#iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 80 -j ACCEPT
-#iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 443 -j ACCEPT
-iptables -t nat -A PREROUTING  -i $AP_IN -p tcp --dport 80  -j DNAT --to $AP_IP:3030
-iptables -t nat -A PREROUTING  -i $AP_IN -p tcp --dport 443 -j DNAT --to $AP_IP:3030
+#### intercept & DNAT & SNAT
+iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 80 -j ACCEPT
+iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 443 -j ACCEPT
+iptables -t nat -A PREROUTING -i $AP_IN -p tcp --dport 80  -j DNAT --to-destination $AP_IP:3030
+iptables -t nat -A PREROUTING -i $AP_IN -p tcp --dport 443 -j DNAT --to-destination $AP_IP:3030
 iptables -t nat -I POSTROUTING -o $AP_IN -s $AP_NET -d $AP_IP -p tcp -j SNAT --to $AP_IP
 iptables -t nat -I PREROUTING  -i $AP_IN -d $AP_IP/24 -j ACCEPT
 iptables -t nat -I PREROUTING  -i $AP_IN -d 10.0.0.0/13 -j ACCEPT
@@ -85,9 +112,6 @@ EOF
 
 dnsmasq -C dnsmasq.conf -x /var/run/dnsmasq-${AP_IN}.pid -8 $PWD/logs/dnsmasq.log -H $PWD/hosts
 
-#iptables -t nat -I POSTROUTING -o $WIFI_IN -j MASQUERADE
-#iptables -I FORWARD -i $AP_IN   -s 192.168.20.0/24 -j ACCEPT
-#iptables -I FORWARD -i $WIFI_IN -d 192.168.20.0/24 -j ACCEPT
 
 #/usr/lib/git-core/git-daemon --listen=0.0.0.0 --export-all --verbose \
 #	--base-path=/mnt/Others/git/ --detach --reuseaddr --pid-file=/var/run/git-daemon-${AP_IN}.pid
@@ -98,6 +122,7 @@ squid -f squid.conf
 
 trap quit HUP TERM
 
+set +e
 hostapd hostapd.conf
 
 quit
