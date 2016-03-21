@@ -24,8 +24,8 @@ quit() {
 	iptables -D FORWARD -i $AP_IN   -s 192.168.20.0/24 -j ACCEPT
 	iptables -D FORWARD -i $WAN_IN -d 192.168.20.0/24 -j ACCEPT
 
-	sudo iptables -A INPUT -i lo -j ACCEPT
-	sudo iptables -A OUTPUT -o lo -j ACCEPT
+	iptables -A INPUT -i lo -j ACCEPT
+	iptables -A OUTPUT -o lo -j ACCEPT
 
 	systemctl stop smbd nmbd
 	kill -9 $(cat /var/run/dnsmasq-${AP_IN}.pid)
@@ -80,7 +80,7 @@ EOF
 #### intercept & REDIRECT
 iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 80   -j ACCEPT # http
 iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 80 -j ACCEPT
-iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 443 -j ACCEPT
+#iptables -t nat -A PREROUTING  -i $AP_IN -s ${AP_NET} -d ${AP_NET} -p tcp --dport 443 -j ACCEPT
 iptables -t nat -A PREROUTING -i $AP_IN -p tcp -m tcp --dport 80  -j REDIRECT --to-port 3030
 
 iptables -A FORWARD -p tcp -m tcp --dport 443 -j REJECT --reject-with icmp-port-unreachable
@@ -113,8 +113,8 @@ EOF
 dnsmasq -C dnsmasq.conf -x /var/run/dnsmasq-${AP_IN}.pid -8 $PWD/logs/dnsmasq.log -H $PWD/hosts
 
 
-#/usr/lib/git-core/git-daemon --listen=0.0.0.0 --export-all --verbose \
-#	--base-path=/mnt/Others/git/ --detach --reuseaddr --pid-file=/var/run/git-daemon-${AP_IN}.pid
+/usr/lib/git-core/git-daemon --listen=0.0.0.0 --export-all --verbose \
+	--base-path=/mnt/Others/git/ --detach --reuseaddr --pid-file=/var/run/git-daemon-${AP_IN}.pid
 
 systemctl start smbd nmbd
 
