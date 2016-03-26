@@ -49,6 +49,7 @@ sysctl -w net.ipv4.conf.lo.rp_filter=0
 sysctl -w net.ipv4.conf.default.accept_source_route=0
 
 
+iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 22   -j ACCEPT # ssh
 iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 53   -j ACCEPT
 iptables -I INPUT -p udp -i $AP_IN -s $AP_NET -d $AP_NET -m udp --dport 53   -j ACCEPT
 iptables -I INPUT -p tcp -i $AP_IN -s $AP_NET -d $AP_NET -m tcp --dport 67   -j ACCEPT
